@@ -4,13 +4,35 @@ import numpy as np
 import pickle
 import datetime
 import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 
 # Paths to dataset and model files
-dataset_file_path = r'C:\testProject\cleaned_data.csv'
-selected_features_file_path = r'C:\testProject\selected_features.txt'
+dataset_file_path = r'C:\Project\house_price_prediction\cleaned_data.csv'
+selected_features_file_path = r'C:\Project\house_price_prediction\selected_features.txt'
 
-model_file_path = r'C:\testProject\xgb_model.pkl'
-scaler_file_path = r'C:\testProject\scaler.pkl'
+model_file_path = r'C:\Project\house_price_prediction\xgb_model.pkl'
+scaler_file_path = r'C:\Project\house_price_prediction\scaler.pkl'
+
+# Categorical to numerical mapping
+categorical_mappings = {
+    "OverallQual": {"Very Excellent": 10,"Excellent": 9,"Very Good": 8,"Good": 7,"Above Average": 6,"Average": 5,"Below Average": 4,"Fair": 3,"Poor": 2,"Very Poor": 1,},
+    "BsmtQual": {"Ex": 5, "Gd": 4, "TA": 3, "Fa": 2, "Po": 1, "NA": 0},
+    "BsmtFinType1": {"GLQ": 6, "ALQ": 5, "BLQ": 4, "Rec": 3, "LwQ": 2, "Unf": 1, "NA": 0},
+    "KitchenQual": {"Ex": 5, "Gd": 4, "TA": 3, "Fa": 2, "Po": 1},
+    "FireplaceQu": {"Ex": 5, "Gd": 4, "TA": 3, "Fa": 2, "Po": 1, "NA": 0},
+    "GarageFinish": {"Fin": 3, "RFn": 2, "Unf": 1, "NA": 0},
+    "GarageQual": {"Ex": 5, "Gd": 4, "TA": 3, "Fa": 2, "Po": 1, "NA": 0},
+    "GarageCond": {"Ex": 5, "Gd": 4, "TA": 3, "Fa": 2, "Po": 1, "NA": 0},
+    "Functional_Min1": {"Min1": 1, "Min2": 0},
+    "Functional_Typ": {"Typ": 1, "NonTyp": 0},
+    "MSZoning_RM": {1: 1, 0: 0},
+    "Condition1_PosN": {1: 1, 0: 0},
+    "Exterior1st_BrkFace": {1: 1, 0: 0},
+    "CentralAir_Y": {1: 1, 0: 0},
+    "GarageType_Attchd": {1: 1, 0: 0},
+    "GarageType_Detchd": {1: 1, 0: 0},
+    "Neighborhood_Edwards": {1: 1, 0: 0},
+}
 
 # Load pickled objects (model, scaler, etc.)
 def load_pkl(fname):
@@ -37,7 +59,7 @@ def get_data():
 
 def visualize_feature_vs_prediction(dataset, feature, prediction, user_input):
     """
-    Visualize a selected feature vs. predicted price.
+    Visualize a selected feature vs. predicted price using Plotly.
 
     Parameters:
     - dataset (pd.DataFrame): The dataset containing feature values and target variable.
@@ -51,49 +73,84 @@ def visualize_feature_vs_prediction(dataset, feature, prediction, user_input):
         st.error(f"The feature '{feature}' does not exist in the dataset.")
         return
 
-    # Group by the selected feature and calculate average price
-    avg_price_per_feature = dataset.groupby(feature)["SalePrice"].mean()
+    # Determine if the feature is categorical or numerical
+    is_categorical = dataset[feature].dtype == 'object' or feature in categorical_mappings
 
-    # Create the plot
-    fig, ax = plt.subplots()
-    ax.plot(avg_price_per_feature.index, avg_price_per_feature.values, color="skyblue", label="Average Price")
+    # Initialize Plotly figure
+    fig = go.Figure()
 
-    # Highlight the predicted price
-    ax.axhline(y=prediction, color="red", linestyle="--", label=f"Predicted Price (${prediction:,.2f})")
+    if is_categorical:
+        # Plot for categorical features: bar plot
+        avg_price_per_feature = dataset.groupby(feature)["SalePrice"].mean().sort_index()
+        fig.add_trace(
+            go.Bar(
+                x=avg_price_per_feature.index,
+                y=avg_price_per_feature.values,
+                name="Average Price",
+                marker=dict(color="skyblue"),
+            )
+        )
+        # Highlight the predicted price
+        if user_input is not None:
+            fig.add_trace(
+                go.Bar(
+                    x=[user_input],
+                    y=[prediction],
+                    name="Predicted Price",
+                    marker=dict(color="red"),
+                )
+            )
+    else:
+        # Plot for numerical features: line plot
+        avg_price_per_feature = dataset.groupby(feature)["SalePrice"].mean().sort_index()
+        fig.add_trace(
+            go.Scatter(
+                x=avg_price_per_feature.index,
+                y=avg_price_per_feature.values,
+                mode="lines",
+                name="Average Price",
+                line=dict(color="skyblue"),
+            )
+        )
+        # Highlight the predicted price with a horizontal line
+        fig.add_trace(
+            go.Scatter(
+                x=[user_input],  # Single x value (user input)
+                y=[prediction],  # Single y value (predicted price)
+                mode="markers",  # Use markers to display the point
+                name=f"Predicted Price (${prediction:,.2f})",
+                marker=dict(size=5, color="red", symbol="circle"),  # Custom marker style
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=[user_input, user_input],
+                y=[0, prediction],
+                mode="lines",
+                line=dict(dash="dash", color="red"),
+            )
+        )
 
-    # Highlight the user-selected feature value
-    if user_input is not None:
-        ax.axvline(x=user_input, color="green", linestyle="--", label=f"Selected {feature} ({user_input})")
+        fig.add_trace(
+            go.Scatter(
+                x=[min(avg_price_per_feature.index), user_input],
+                y=[prediction, prediction],
+                mode="lines",
+                line=dict(dash="dash", color="red"),
+            )
+        )
 
-    # Labels and legend
-    ax.set_xlabel(feature)
-    ax.set_ylabel("Average Sale Price ($)")
-    ax.set_title(f"{feature} vs. Average Price")
-    ax.legend()
+    # Update layout
+    fig.update_layout(
+        title=f"{feature} vs. Average Price",
+        xaxis_title=feature,
+        yaxis_title="Average Sale Price ($)",
+        legend=dict(title="Legend", orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        template="plotly_white",
+    )
 
     # Show the plot in Streamlit
-    st.pyplot(fig)
-
-# Categorical to numerical mapping
-categorical_mappings = {
-    "OverallQual": {"Very Excellent": 10,"Excellent": 9,"Very Good": 8,"Good": 7,"Above Average": 6,"Average": 5,"Below Average": 4,"Fair": 3,"Poor": 2,"Very Poor": 1,},
-    "BsmtQual": {"Ex": 5, "Gd": 4, "TA": 3, "Fa": 2, "Po": 1, "NA": 0},
-    "BsmtFinType1": {"GLQ": 6, "ALQ": 5, "BLQ": 4, "Rec": 3, "LwQ": 2, "Unf": 1, "NA": 0},
-    "KitchenQual": {"Ex": 5, "Gd": 4, "TA": 3, "Fa": 2, "Po": 1},
-    "FireplaceQu": {"Ex": 5, "Gd": 4, "TA": 3, "Fa": 2, "Po": 1, "NA": 0},
-    "GarageFinish": {"Fin": 3, "RFn": 2, "Unf": 1, "NA": 0},
-    "GarageQual": {"Ex": 5, "Gd": 4, "TA": 3, "Fa": 2, "Po": 1, "NA": 0},
-    "GarageCond": {"Ex": 5, "Gd": 4, "TA": 3, "Fa": 2, "Po": 1, "NA": 0},
-    "Functional_Min1": {"Min1": 1, "Min2": 0},
-    "Functional_Typ": {"Typ": 1, "NonTyp": 0},
-    "MSZoning_RM": {1: 1, 0: 0},
-    "Condition1_PosN": {1: 1, 0: 0},
-    "Exterior1st_BrkFace": {1: 1, 0: 0},
-    "CentralAir_Y": {1: 1, 0: 0},
-    "GarageType_Attchd": {1: 1, 0: 0},
-    "GarageType_Detchd": {1: 1, 0: 0},
-    "Neighborhood_Edwards": {1: 1, 0: 0},
-}
+    st.plotly_chart(fig)
 
 # Main app
 def main():
@@ -102,7 +159,6 @@ def main():
     dataset, selected_features = get_data()
 
     st.title("House Price Prediction")
-
     
 
     # Initialize user data dictionary
@@ -115,8 +171,8 @@ def main():
             user_data[feature] = st.sidebar.selectbox(f"{feature}:", options)
         else:
             if feature == 'YearBuilt':
-                current_year = datetime.date.today().year
-                user_data[feature] = st.sidebar.number_input(f"{feature}:", min_value=1800, max_value=current_year, step=1, value=current_year)
+                max_year = dataset[feature].max()
+                user_data[feature] = st.sidebar.number_input(f"{feature}:", min_value=1800, max_value=max_year, step=1, value=max_year)
             else:
                 user_data[feature] = st.sidebar.number_input(f"{feature}:", value=0.0)
 
@@ -143,13 +199,10 @@ def main():
 
         @st.fragment
         def app_section_number_1() -> None:
-
             feature_to_plot = st.selectbox("Select a feature to visualize:", selected_features)
             user_feature_value = user_data.get(feature_to_plot, None)
-            st.write(feature_to_plot, user_feature_value)
             visualize_feature_vs_prediction(dataset, feature_to_plot, prediction, user_feature_value)
         app_section_number_1()
-
         
 
 if __name__ == "__main__":
